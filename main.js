@@ -56,6 +56,8 @@ function calculateSolarPanelOutput(sunAltitude_deg, sunAzimuth_deg_north, alpha_
     return { output: solarPanelOutput.toFixed(2), dotProduct: dotProduct.toFixed(2) }; // Return both
 }
 
+// Main application logic
+// Adding a comment to trigger a new GitHub Pages deploy
 const App = {
     oninit: function(vnode) {
         vnode.state.latitude = null;
