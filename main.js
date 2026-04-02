@@ -47,12 +47,13 @@ function calculateSolarPanelOutput(sunAltitude_deg, sunAzimuth_deg_north, alpha_
     for (let i = 0; i < 3; i++) {
         dotProduct += sunVector[i] * panelNormalVector[i];
     }
+    dotProduct = -dotProduct; // Invert dot product to represent panel on the back of the device
 
     // Solar panel output is proportional to the cosine of the angle of incidence.
     // It should be 0 if the sun is behind the panel (dot product < 0).
     const solarPanelOutput = Math.max(0, dotProduct); // Value between 0 and 1
 
-    return solarPanelOutput.toFixed(2); // Return as a string with 2 decimal places
+    return { output: solarPanelOutput.toFixed(2), dotProduct: dotProduct.toFixed(2) }; // Return both
 }
 
 const App = {
@@ -76,6 +77,8 @@ const App = {
         vnode.state.gainNode = null;
         vnode.state.isSonificationPlaying = false;
         vnode.state.currentGain = 0; // New state to display current gain
+        vnode.state.currentPitch = 0; // New state to display current pitch
+        vnode.state.dotProduct = null; // New state for dot product
 
         // Function to start/stop sonification
         const toggleSonification = () => {
@@ -98,8 +101,8 @@ const App = {
                 vnode.state.gainNode = vnode.state.audioContext.createGain();
 
                 vnode.state.oscillator.type = 'sine'; // or 'square', 'sawtooth', 'triangle'
-                vnode.state.oscillator.frequency.setValueAtTime(440, vnode.state.audioContext.currentTime); // A4 note
-                vnode.state.gainNode.gain.setValueAtTime(0, vnode.state.audioContext.currentTime); // Start muted
+                vnode.state.oscillator.frequency.setValueAtTime(440, vnode.state.audioContext.currentTime); // Initial A4 note
+                vnode.state.gainNode.gain.setValueAtTime(0.5, vnode.state.audioContext.currentTime); // Set initial gain to make it audible
 
                 vnode.state.oscillator.connect(vnode.state.gainNode);
                 vnode.state.gainNode.connect(vnode.state.audioContext.destination);
@@ -127,18 +130,22 @@ const App = {
 
                 // Update Solar Panel Output
                 if (vnode.state.alpha !== null && vnode.state.beta !== null && vnode.state.gamma !== null) {
-                    vnode.state.solarPanelOutput = calculateSolarPanelOutput(
+                    const panelOutput = calculateSolarPanelOutput(
                         parseFloat(vnode.state.sunAltitude),
                         parseFloat(vnode.state.sunAzimuth),
                         parseFloat(vnode.state.alpha),
                         parseFloat(vnode.state.beta)
                     );
+                    vnode.state.solarPanelOutput = panelOutput.output;
+                    vnode.state.dotProduct = panelOutput.dotProduct;
 
-                    // Update sonification gain
-                    if (vnode.state.isSonificationPlaying && vnode.state.gainNode) {
-                        const gainValue = parseFloat(vnode.state.solarPanelOutput) * 0.5; // Scale to max 0.5 for audibility
-                        vnode.state.gainNode.gain.setValueAtTime(gainValue, vnode.state.audioContext.currentTime);
-                        vnode.state.currentGain = gainValue.toFixed(2); // Store for display
+                    // Update sonification pitch
+                    if (vnode.state.isSonificationPlaying && vnode.state.oscillator) {
+                        const minFrequency = 200; // Hz
+                        const maxFrequency = 800; // Hz
+                        const pitchValue = minFrequency + (maxFrequency - minFrequency) * parseFloat(vnode.state.solarPanelOutput);
+                        vnode.state.oscillator.frequency.setValueAtTime(pitchValue, vnode.state.audioContext.currentTime);
+                        vnode.state.currentPitch = pitchValue.toFixed(0); // Store for display
                     }
                 }
 
@@ -234,13 +241,19 @@ const App = {
                     m("p", "Sun Altitude: " + (vnode.state.sunAltitude || "Waiting...") + "°"),
                     m("p", "Sun Azimuth: " + (vnode.state.sunAzimuth || "Waiting...") + "°"),
                     m("p", "Solar Panel Output: " + (vnode.state.solarPanelOutput !== null ? (vnode.state.solarPanelOutput * 100).toFixed(0) + "%" : "Waiting...")),
-                    vnode.state.isSonificationPlaying ? m("p", "Current Gain: " + vnode.state.currentGain) : null,
+                    vnode.state.isSonificationPlaying ? m("p", "Current Pitch: " + vnode.state.currentPitch + " Hz") : null,
                     m("button", {
                         onclick: vnode.state.toggleSonification
                     }, vnode.state.isSonificationPlaying ? "Stop Sonification" : "Start Sonification")
                 ]),
             m("hr"), // Separator
-            // AR Sun Indicator will be inserted here
+
+            m("div", [
+                m("h2", "Debug Info"),
+                m("p", "Dot Product (Sun vs Panel): " + (vnode.state.dotProduct !== null ? vnode.state.dotProduct : "Waiting...")),
+            ]),
+
+            m("hr"), // Separator
             vnode.state.orientationError ?
                 m("p", "Orientation Error: " + vnode.state.orientationError) :
                 m("div", [
