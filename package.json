@@ -1,0 +1,20 @@
+{
+  "name": "solar-sim-sonification",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vite --host"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "vite": "^8.0.3"
+  },
+  "dependencies": {
+    "mithril": "^2.3.8",
+    "suncalc": "^1.9.0"
+  }
+}
