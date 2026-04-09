@@ -16,6 +16,89 @@ const getCardinalDirection = (azimuth) => {
     return directions[index];
 };
 
+function projectWorldToScreen(worldVector, alpha_deg, beta_deg, gamma_deg, isPanelOnBack) {
+    // A robust implementation for projecting a world vector onto the screen.
+    // This replaces the previous buggy version.
+
+    if (worldVector === null || alpha_deg === null || beta_deg === null || gamma_deg === null) {
+        return { x: 0, y: 0, visible: false };
+    }
+
+    // 1. Calculate the screen's normal vector (points out of the screen) in world coordinates.
+    // This is the same calculation used for the solar panel simulation.
+    const alpha_rad = toRadians(alpha_deg);
+    const beta_rad = toRadians(beta_deg);
+    const gamma_rad = toRadians(gamma_deg);
+
+    const ca = Math.cos(alpha_rad);
+    const sa = Math.sin(alpha_rad);
+    const cb = Math.cos(beta_rad);
+    const sb = Math.sin(beta_rad);
+    const cg = Math.cos(gamma_rad);
+    const sg = Math.sin(gamma_rad);
+
+    // This vector points out of the front of the screen, in world (E, N, U) coordinates.
+    const screenNormal = [
+        sa * sb * cg + ca * sg,
+        -ca * sb * cg + sa * sg,
+        cb * cg
+    ];
+
+    // 2. The AR camera direction depends on the panel setting.
+    const cameraForward = isPanelOnBack ? screenNormal.map(v => -v) : screenNormal;
+
+    // 3. Check if the sun is in the hemisphere the camera is pointing towards.
+    // This is done by calculating the dot product between the camera's direction and the sun's direction.
+    // If the dot product is positive, the angle between them is less than 90 degrees, so it's visible.
+    const dotProduct = worldVector[0] * cameraForward[0] + worldVector[1] * cameraForward[1] + worldVector[2] * cameraForward[2];
+    const isVisible = dotProduct > 0;
+
+    if (!isVisible) {
+        return { x: 0, y: 0, visible: false };
+    }
+
+    // 4. Create a view matrix (a coordinate system for the camera).
+    const worldUp = [0, 0, 1]; // Z-axis is "Up" in the world
+
+    // Use cross products to find the camera's "right" and "up" vectors.
+    let cameraRight = [
+        worldUp[1] * cameraForward[2] - worldUp[2] * cameraForward[1],
+        worldUp[2] * cameraForward[0] - worldUp[0] * cameraForward[2],
+        worldUp[0] * cameraForward[1] - worldUp[1] * cameraForward[0]
+    ];
+    const rightMag = Math.sqrt(cameraRight[0]**2 + cameraRight[1]**2 + cameraRight[2]**2);
+    // Handle case where camera is pointing straight up/down
+    if (rightMag < 0.001) {
+        cameraRight = [1, 0, 0]; // Default to East if looking at zenith/nadir
+    } else {
+        cameraRight = cameraRight.map(v => v / rightMag);
+    }
+
+    let cameraUp = [
+        cameraForward[1] * cameraRight[2] - cameraForward[2] * cameraRight[1],
+        cameraForward[2] * cameraRight[0] - cameraForward[0] * cameraRight[2],
+        cameraForward[0] * cameraRight[1] - cameraForward[1] * cameraRight[0]
+    ];
+    
+    // 5. Project the sun vector onto the camera's right and up axes.
+    const projX = worldVector[0] * cameraRight[0] + worldVector[1] * cameraRight[1] + worldVector[2] * cameraRight[2];
+    const projY = worldVector[0] * cameraUp[0] + worldVector[1] * cameraUp[1] + worldVector[2] * cameraUp[2];
+
+    // 6. Convert projected coordinates to screen percentages.
+    const fov = 90; // Field of view in degrees
+    const scale = Math.tan(toRadians(fov / 2));
+    
+    // Normalize by the dot product (which represents the depth) and scale by FOV
+    const normX = projX / (dotProduct * scale);
+    const normY = projY / (dotProduct * scale);
+
+    // Convert from (-1, 1) range to (0, 100) for CSS.
+    const screenX = (normX + 1) / 2 * 100;
+    const screenY = (1 - (normY + 1) / 2) * 100; // Y is inverted on screens
+
+    return { x: screenX, y: screenY, visible: true };
+}
+
 // Function to calculate solar panel output based on sun position and device orientation
 function calculateSolarPanelOutput(sunAltitude_deg, sunAzimuth_deg_north, alpha_deg, beta_deg, gamma_deg, isPanelOnBack) {
     // Ensure all necessary data is available
@@ -135,6 +218,9 @@ const App = {
         vnode.state.isPanelAzimuthNotApplicable = false;
         vnode.state.lastEdited = "4/7/2026, 5:33:04 PM"; // Hardcoded timestamp
         vnode.state.alphaOffset = 0; // For manual calibration
+        vnode.state.sunScreenX = 0;
+        vnode.state.sunScreenY = 0;
+        vnode.state.sunIsVisible = false;
 
         const handleOrientation = (event) => {
             vnode.state.alpha = event.alpha ? event.alpha.toFixed(2) : null;
@@ -277,6 +363,25 @@ const App = {
                     // Calculate Device Heading (Compass)
                     vnode.state.deviceHeading = calibratedAlpha.toFixed(2);
 
+                    // AR Projection
+                    const sunAltitude_rad = toRadians(parseFloat(vnode.state.sunAltitude));
+                    const sunAzimuth_rad = toRadians(parseFloat(vnode.state.sunAzimuth));
+                    const sunVector_x = Math.cos(sunAltitude_rad) * Math.sin(sunAzimuth_rad);
+                    const sunVector_y = Math.cos(sunAltitude_rad) * Math.cos(sunAzimuth_rad);
+                    const sunVector_z = Math.sin(sunAltitude_rad);
+                    const sunVector = [sunVector_x, sunVector_y, sunVector_z];
+
+                    const sunScreenCoords = projectWorldToScreen(
+                        sunVector,
+                        calibratedAlpha,
+                        parseFloat(vnode.state.beta),
+                        parseFloat(vnode.state.gamma),
+                        vnode.state.isPanelOnBack
+                    );
+                    vnode.state.sunScreenX = sunScreenCoords.x;
+                    vnode.state.sunScreenY = sunScreenCoords.y;
+                    vnode.state.sunIsVisible = sunScreenCoords.visible;
+
                     // Update sonification pitch
                     if (vnode.state.isSonificationPlaying && vnode.state.oscillator) {
                         const minFrequency = 200; // Hz
@@ -399,74 +504,104 @@ const App = {
     },
 
     view: function(vnode) {
-        return m("div", [
-            m("h1", "Solar Sonification"),
-            vnode.state.geolocationError ?
-                m("p", "Geolocation Error: " + vnode.state.geolocationError) :
+        return m("div", [ // New root div
+            // AR Container
+            m("div", { // AR Container
+                style: {
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    pointerEvents: "none", // Allow clicks to pass through
+                    zIndex: 1000
+                }
+            }, [
+                m("div", { // AR Sun visualization
+                    style: {
+                        position: "absolute",
+                        left: vnode.state.sunScreenX + "%",
+                        top: vnode.state.sunScreenY + "%",
+                        width: "20px",
+                        height: "20px",
+                        background: "red", // Changed to red
+                        borderRadius: "50%",
+                        transform: "translate(-50%, -50%)",
+                        display: vnode.state.sunIsVisible ? "block" : "none"
+                    }
+                })
+            ]),
+            // Content wrapper
+            m("div", { style: "font-family: sans-serif; padding: 1em;" }, [
+                // Original content starts here
+                m("h1", "Solar Sonification"),
+                vnode.state.geolocationError ?
+                    m("p", "Geolocation Error: " + vnode.state.geolocationError) :
+                    m("div", [
+                        m("p", "Latitude: " + (vnode.state.latitude || "Waiting...")),
+                        m("p", "Longitude: " + (vnode.state.longitude || "Waiting...")),
+                        m("p", "Current Solar Time: " + (vnode.state.currentSolarTime || "Waiting...")),
+                        m("p", "Sun Altitude: " + (vnode.state.sunAltitude || "Waiting...") + "°"),
+                        m("p", "Sun Azimuth: " + (vnode.state.sunAzimuth !== null ? vnode.state.sunAzimuth + "° " + getCardinalDirection(parseFloat(vnode.state.sunAzimuth)) : "Waiting...")),
+                        m("p", "Solar Panel Output: " + (vnode.state.solarPanelOutput !== null ? (vnode.state.solarPanelOutput * 100).toFixed(0) + "%" : "Waiting...")),
+                        vnode.state.isSonificationPlaying ? m("p", "Current Pitch: " + vnode.state.currentPitch + " Hz") : null,
+                        !vnode.state.orientationPermissionGranted ?
+                            m("button", { onclick: () => App.requestOrientationPermission(vnode) }, "Allow Device Orientation") :
+                            null,
+                        m("button", {
+                            onclick: vnode.state.toggleSonification
+                        }, vnode.state.isSonificationPlaying ? "Stop Sonification" : "Start Sonification"),
+                        m("button", { onclick: vnode.state.togglePanelDirection }, "Panel on " + (vnode.state.isPanelOnBack ? "Back" : "Front") + " of Phone"),
+                            m("button", { onclick: vnode.state.toggleTestMode }, vnode.state.testMode ? "Exit Test Mode" : "Enter Test Mode (Zenith Sun)")
+                    ]),
+                m("hr"), // Separator
+
                 m("div", [
-                    m("p", "Latitude: " + (vnode.state.latitude || "Waiting...")),
-                    m("p", "Longitude: " + (vnode.state.longitude || "Waiting...")),
-                    m("p", "Current Solar Time: " + (vnode.state.currentSolarTime || "Waiting...")),
-                    m("p", "Sun Altitude: " + (vnode.state.sunAltitude || "Waiting...") + "°"),
-                    m("p", "Sun Azimuth: " + (vnode.state.sunAzimuth !== null ? vnode.state.sunAzimuth + "° " + getCardinalDirection(parseFloat(vnode.state.sunAzimuth)) : "Waiting...")),
-                    m("p", "Solar Panel Output: " + (vnode.state.solarPanelOutput !== null ? (vnode.state.solarPanelOutput * 100).toFixed(0) + "%" : "Waiting...")),
-                    vnode.state.isSonificationPlaying ? m("p", "Current Pitch: " + vnode.state.currentPitch + " Hz") : null,
-                    !vnode.state.orientationPermissionGranted ?
-                        m("button", { onclick: () => App.requestOrientationPermission(vnode) }, "Allow Device Orientation") :
-                        null,
-                    m("button", {
-                        onclick: vnode.state.toggleSonification
-                    }, vnode.state.isSonificationPlaying ? "Stop Sonification" : "Start Sonification"),
-                    m("button", { onclick: vnode.state.togglePanelDirection }, "Panel on " + (vnode.state.isPanelOnBack ? "Back" : "Front") + " of Phone"),
-                        m("button", { onclick: vnode.state.toggleTestMode }, vnode.state.testMode ? "Exit Test Mode" : "Enter Test Mode (Zenith Sun)")
-                ]),
-            m("hr"), // Separator
+                    m("div", {
+                        style: "margin-top: 10px;"
+                    }, [
+                        m("button", { onclick: vnode.state.calibrateOrientation }, "Calibrate Compass (Set Current Heading as North)"),
+                        (vnode.state.alphaOffset !== 0) ? 
+                            m("p", { style: "font-style: italic; color: #888;" }, "Calibration offset is active.") :
+                            m("p", { style: "font-style: italic; color: #888;" }, "Calibration offset is inactive.")
+                    ]),
 
-            m("div", [
-                m("div", {
-                    style: "margin-top: 10px;"
-                }, [
-                    m("button", { onclick: vnode.state.calibrateOrientation }, "Calibrate Compass (Set Current Heading as North)"),
-                    (vnode.state.alphaOffset !== 0) ? 
-                        m("p", { style: "font-style: italic; color: #888;" }, "Calibration offset is active.") :
-                        m("p", { style: "font-style: italic; color: #888;" }, "Calibration offset is inactive.")
+                    m("h3", "Raw Sensor Data"),
+                    m("p", "Alpha (Z-axis): " + (vnode.state.alpha || "Waiting...")),
+                    m("p", "Beta (X-axis): " + (vnode.state.beta || "Waiting...")),
+                    m("p", "Gamma (Y-axis): " + (vnode.state.gamma || "Waiting...")),
+
+                    m("h3", "Calibration Info"),
+                    m("p", "Alpha Offset: " + vnode.state.alphaOffset),
+
+                    m("h3", "Debug Info"),
+                    m("p", "Dot Product (Sun vs Panel): " + (vnode.state.dotProduct !== null ? vnode.state.dotProduct : "Waiting...")),
+                    m("p", "Device Heading (Compass): " + (vnode.state.deviceHeading !== null ? vnode.state.deviceHeading + "° (" + getCardinalDirection(vnode.state.deviceHeading) + ")" : "Waiting...")),
+                    m("p", "Panel Azimuth: " + (vnode.state.isPanelAzimuthNotApplicable ? "N/A (Panel is Flat)" : (vnode.state.panelAzimuth !== null ? vnode.state.panelAzimuth + "° (" + getCardinalDirection(vnode.state.panelAzimuth) + ")" : "Waiting..."))),
+                    m("p", "Panel Tilt: " + (vnode.state.panelTilt !== null ? vnode.state.panelTilt + "°" : "Waiting...")),
+                    m("p", "Panel Normal Vector: " + (vnode.state.panelNormalVector ? `[${vnode.state.panelNormalVector.map(n => n.toFixed(2)).join(', ')}]` : "Waiting...")),
                 ]),
 
-                m("h3", "Raw Sensor Data"),
-                m("p", "Alpha (Z-axis): " + (vnode.state.alpha || "Waiting...")),
-                m("p", "Beta (X-axis): " + (vnode.state.beta || "Waiting...")),
-                m("p", "Gamma (Y-axis): " + (vnode.state.gamma || "Waiting...")),
+                m("hr"), // Separator
 
-                m("h3", "Calibration Info"),
-                m("p", "Alpha Offset: " + vnode.state.alphaOffset),
+                m("div", [
+                    m("h2", "Reference Sun Positions"),
+                    m("h3", "At 12 PM Clock Time Today"),
+                    m("p", "Azimuth: " + (vnode.state.sunAzimuth12pm !== null ? vnode.state.sunAzimuth12pm + "° " + getCardinalDirection(parseFloat(vnode.state.sunAzimuth12pm)) : "Waiting...")),
+                    m("p", "Altitude: " + (vnode.state.sunAltitude12pm !== null ? vnode.state.sunAltitude12pm + "°" : "Waiting...")),
+                    m("h3", "At Solar Noon Today"),
+                    m("p", "Time: " + (vnode.state.solarNoonTime !== null ? vnode.state.solarNoonTime : "Waiting...")),
+                    m("p", "Azimuth: " + (vnode.state.solarNoonAzimuth !== null ? vnode.state.solarNoonAzimuth + "° " + getCardinalDirection(parseFloat(vnode.state.solarNoonAzimuth)) : "Waiting...")),
+                    m("p", "Altitude: " + (vnode.state.solarNoonAltitude !== null ? vnode.state.solarNoonAltitude + "°" : "Waiting...")),
+                ]),
 
-                m("h3", "Debug Info"),
-                m("p", "Dot Product (Sun vs Panel): " + (vnode.state.dotProduct !== null ? vnode.state.dotProduct : "Waiting...")),
-                m("p", "Device Heading (Compass): " + (vnode.state.deviceHeading !== null ? vnode.state.deviceHeading + "° (" + getCardinalDirection(vnode.state.deviceHeading) + ")" : "Waiting...")),
-                m("p", "Panel Azimuth: " + (vnode.state.isPanelAzimuthNotApplicable ? "N/A (Panel is Flat)" : (vnode.state.panelAzimuth !== null ? vnode.state.panelAzimuth + "° (" + getCardinalDirection(vnode.state.panelAzimuth) + ")" : "Waiting..."))),
-                m("p", "Panel Tilt: " + (vnode.state.panelTilt !== null ? vnode.state.panelTilt + "°" : "Waiting...")),
-                m("p", "Panel Normal Vector: " + (vnode.state.panelNormalVector ? `[${vnode.state.panelNormalVector.map(n => n.toFixed(2)).join(', ')}]` : "Waiting...")),
-            ]),
-
-            m("hr"), // Separator
-
-            m("div", [
-                m("h2", "Reference Sun Positions"),
-                m("h3", "At 12 PM Clock Time Today"),
-                m("p", "Azimuth: " + (vnode.state.sunAzimuth12pm !== null ? vnode.state.sunAzimuth12pm + "° " + getCardinalDirection(parseFloat(vnode.state.sunAzimuth12pm)) : "Waiting...")),
-                m("p", "Altitude: " + (vnode.state.sunAltitude12pm !== null ? vnode.state.sunAltitude12pm + "°" : "Waiting...")),
-                m("h3", "At Solar Noon Today"),
-                m("p", "Time: " + (vnode.state.solarNoonTime !== null ? vnode.state.solarNoonTime : "Waiting...")),
-                m("p", "Azimuth: " + (vnode.state.solarNoonAzimuth !== null ? vnode.state.solarNoonAzimuth + "° " + getCardinalDirection(parseFloat(vnode.state.solarNoonAzimuth)) : "Waiting...")),
-                m("p", "Altitude: " + (vnode.state.solarNoonAltitude !== null ? vnode.state.solarNoonAltitude + "°" : "Waiting...")),
-            ]),
-
-            m("hr"), // Separator
-            vnode.state.orientationError ?
-                m("p", "Orientation Error: " + vnode.state.orientationError) :
-            m("footer", {
-                style: "margin-top: 20px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 0.8em; color: #888;"
-            }, "Last Edited: " + vnode.state.lastEdited)
+                m("hr"), // Separator
+                vnode.state.orientationError ?
+                    m("p", "Orientation Error: " + vnode.state.orientationError) :
+                m("footer", {
+                    style: "margin-top: 20px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 0.8em; color: #888;"
+                }, "Last Edited: " + vnode.state.lastEdited)
+            ]) // Close content wrapper
         ]);
     },
 
