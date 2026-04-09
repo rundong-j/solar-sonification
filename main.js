@@ -257,6 +257,7 @@ const App = {
         vnode.state.debugIndicatorAngle = null;
         vnode.state.debugIndicatorX = null;
         vnode.state.debugIndicatorY = null;
+
         vnode.state.indicatorX = 50;
         vnode.state.indicatorY = 50;
         vnode.state.indicatorRotation = 0;
@@ -437,21 +438,19 @@ const App = {
                     );
                     vnode.state.sunIsVisible = sunScreenCoords.visible;
 
-                    // Always update the raw projection values for debugging
-                    vnode.state.debugProjX = sunScreenCoords.projX ? sunScreenCoords.projX.toFixed(3) : null;
-                    vnode.state.debugProjY = sunScreenCoords.projY ? sunScreenCoords.projY.toFixed(3) : null;
-
                     // Always calculate indicator logic if we have projection data
                     if (sunScreenCoords.projX !== null && sunScreenCoords.projY !== null) {
                         const angle = toDegrees(Math.atan2(sunScreenCoords.projX, sunScreenCoords.projY));
                         const indicatorPos = calculateIndicatorPosition(sunScreenCoords.projX, sunScreenCoords.projY);
 
-                        // Always update debug values
+                        // Update debug values
+                        vnode.state.debugProjX = sunScreenCoords.projX.toFixed(3);
+                        vnode.state.debugProjY = sunScreenCoords.projY.toFixed(3);
                         vnode.state.debugIndicatorAngle = angle.toFixed(2);
                         vnode.state.debugIndicatorX = indicatorPos.x.toFixed(2);
                         vnode.state.debugIndicatorY = indicatorPos.y.toFixed(2);
 
-                        // Always update final values as well
+                        // Update final values
                         vnode.state.indicatorX = indicatorPos.x;
                         vnode.state.indicatorY = indicatorPos.y;
                         vnode.state.indicatorRotation = angle;
@@ -472,11 +471,8 @@ const App = {
                             vnode.state.sunScreenY = sunScreenCoords.y;
                         }
                     } else {
-                        // No valid projection data, hide everything and clear debug info
+                        // No valid projection data, hide everything
                         vnode.state.showIndicator = false;
-                        vnode.state.debugIndicatorAngle = null;
-                        vnode.state.debugIndicatorX = null;
-                        vnode.state.debugIndicatorY = null;
                     }
 
                     // Update sonification pitch
@@ -626,6 +622,21 @@ const App = {
                         transform: "translate(-50%, -50%)",
                         display: vnode.state.sunIsVisible ? "block" : "none"
                     }
+                }),
+                m("div", { // Off-screen indicator
+                    style: {
+                        position: "absolute",
+                        left: vnode.state.indicatorX + "%",
+                        top: vnode.state.indicatorY + "%",
+                        width: "0",
+                        height: "0",
+                        borderLeft: "10px solid transparent",
+                        borderRight: "10px solid transparent",
+                        borderBottom: "20px solid rgba(255, 0, 0, 0.5)", // Semi-transparent red arrow
+                        transform: `translate(-50%, -50%) rotate(${vnode.state.indicatorRotation}deg)`,
+                        transformOrigin: "center center",
+                        display: vnode.state.showIndicator ? "block" : "none"
+                    }
                 })
             ]),
             // Content wrapper
@@ -677,15 +688,12 @@ const App = {
                     m("p", "Panel Azimuth: " + (vnode.state.isPanelAzimuthNotApplicable ? "N/A (Panel is Flat)" : (vnode.state.panelAzimuth !== null ? vnode.state.panelAzimuth + "° (" + getCardinalDirection(vnode.state.panelAzimuth) + ")" : "Waiting..."))),
                     m("p", "Panel Tilt: " + (vnode.state.panelTilt !== null ? vnode.state.panelTilt + "°" : "Waiting...")),
                     m("p", "Panel Normal Vector: " + (vnode.state.panelNormalVector ? `[${vnode.state.panelNormalVector.map(n => n.toFixed(2)).join(', ')}]` : "Waiting...")),
-                    m("p", "Debug ProjX: " + (vnode.state.debugProjX !== null ? vnode.state.debugProjX : "Waiting...")),
-                    m("p", "Debug ProjY: " + (vnode.state.debugProjY !== null ? vnode.state.debugProjY : "Waiting...")),
-                    m("p", "Debug Indicator Angle: " + (vnode.state.debugIndicatorAngle !== null ? vnode.state.debugIndicatorAngle + "°" : "Waiting...")),
-                    m("p", "Debug Indicator X: " + (vnode.state.debugIndicatorX !== null ? vnode.state.debugIndicatorX : "Waiting...")),
-                    m("p", "Debug Indicator Y: " + (vnode.state.debugIndicatorY !== null ? vnode.state.debugIndicatorY : "Waiting...")),
-                    m("p", "Final Indicator X: " + (vnode.state.indicatorX !== null ? vnode.state.indicatorX.toFixed(2) : "Waiting...")),
-                    m("p", "Final Indicator Y: " + (vnode.state.indicatorY !== null ? vnode.state.indicatorY.toFixed(2) : "Waiting...")),
-                    m("p", "Final Indicator Angle: " + (vnode.state.indicatorRotation !== null ? vnode.state.indicatorRotation.toFixed(2) + "°" : "Waiting...")),
-                    m("p", "Final Show Indicator: " + vnode.state.showIndicator),
+                    m("p", "ProjX: " + (vnode.state.debugProjX !== null ? vnode.state.debugProjX : "Waiting...")),
+                    m("p", "ProjY: " + (vnode.state.debugProjY !== null ? vnode.state.debugProjY : "Waiting...")),
+                    m("p", "Indicator Angle: " + (vnode.state.debugIndicatorAngle !== null ? vnode.state.debugIndicatorAngle + "°" : "Waiting...")),
+                    m("p", "Indicator X: " + (vnode.state.debugIndicatorX !== null ? vnode.state.debugIndicatorX : "Waiting...")),
+                    m("p", "Indicator Y: " + (vnode.state.debugIndicatorY !== null ? vnode.state.debugIndicatorY : "Waiting...")),
+                    m("p", "Show Indicator: " + vnode.state.showIndicator),
                 ]),
 
                 m("hr"), // Separator
