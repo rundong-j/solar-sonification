@@ -20,8 +20,8 @@ function projectWorldToScreen(worldVector, alpha_deg, beta_deg, gamma_deg, isPan
     // A robust implementation for projecting a world vector onto the screen.
     // This replaces the previous buggy version.
 
-    if (worldVector === null || alpha_deg === null || beta_deg === null || gamma_deg === null) {
-        return { x: 0, y: 0, visible: false };
+    if (worldVector === null || alpha_deg === null || beta_deg === null || gamma_deg === null || isNaN(alpha_deg) || isNaN(beta_deg) || isNaN(gamma_deg)) {
+        return { x: 0, y: 0, visible: false, projX: null, projY: null };
     }
 
     // 1. Calculate the screen's normal vector (points out of the screen) in world coordinates.
@@ -48,14 +48,8 @@ function projectWorldToScreen(worldVector, alpha_deg, beta_deg, gamma_deg, isPan
     const cameraForward = isPanelOnBack ? screenNormal : screenNormal.map(v => -v);
 
     // 3. Check if the sun is in the hemisphere the camera is pointing towards.
-    // This is done by calculating the dot product between the camera's direction and the sun's direction.
-    // If the dot product is positive, the angle between them is less than 90 degrees, so it's visible.
     const dotProduct = worldVector[0] * cameraForward[0] + worldVector[1] * cameraForward[1] + worldVector[2] * cameraForward[2];
     const isVisible = dotProduct > 0;
-
-    if (!isVisible) {
-        return { x: 0, y: 0, visible: false };
-    }
 
     // 4. Create a view matrix (a coordinate system for the camera) based on device orientation.
     const screenUp = [
@@ -75,13 +69,14 @@ function projectWorldToScreen(worldVector, alpha_deg, beta_deg, gamma_deg, isPan
     const cameraUp = screenUp;
 
     // The camera's "right" vector is the phone's physical right direction.
-    // We apply the "rearview mirror" effect by flipping it when looking from the back.
     const cameraRight = phoneRight;
 
     // 5. Project the sun vector onto the camera's right and up axes.
     const projX = worldVector[0] * cameraRight[0] + worldVector[1] * cameraRight[1] + worldVector[2] * cameraRight[2];
     const projY = worldVector[0] * cameraUp[0] + worldVector[1] * cameraUp[1] + worldVector[2] * cameraUp[2];
 
+    // If the sun is not visible, we don't need to do the final screen projection.
+    // But we still return the raw projection data for the indicator.
     if (!isVisible) {
         return { x: 0, y: 0, visible: false, projX: projX, projY: projY };
     }
@@ -106,28 +101,27 @@ function calculateIndicatorPosition(projX, projY) {
     const halfW = (100 - 2 * margin) / 2;
     const halfH = (100 - 2 * margin) / 2;
 
+    const angle = Math.atan2(projY, projX);
+    const tanAngle = Math.tan(angle);
+
     let edgeX, edgeY;
 
-    if (Math.abs(projX) < 1e-9) {
-        edgeX = 0;
-        edgeY = projY > 0 ? halfH : -halfH;
+    if (Math.abs(tanAngle) * halfW > halfH) {
+        // Intersects with top or bottom edge
+        if (projY > 0) {
+            edgeY = halfH;
+        } else {
+            edgeY = -halfH;
+        }
+        edgeX = edgeY / tanAngle;
     } else {
-        const slope = projY / projX;
+        // Intersects with left or right edge
         if (projX > 0) {
             edgeX = halfW;
         } else {
             edgeX = -halfW;
         }
-        edgeY = slope * edgeX;
-
-        if (Math.abs(edgeY) > halfH) {
-            if (projY > 0) {
-                edgeY = halfH;
-            } else {
-                edgeY = -halfH;
-            }
-            edgeX = edgeY / slope;
-        }
+        edgeY = edgeX * tanAngle;
     }
 
     const finalX = edgeX + 50;
@@ -263,6 +257,10 @@ const App = {
         vnode.state.debugIndicatorAngle = null;
         vnode.state.debugIndicatorX = null;
         vnode.state.debugIndicatorY = null;
+        vnode.state.indicatorX = 50;
+        vnode.state.indicatorY = 50;
+        vnode.state.indicatorRotation = 0;
+        vnode.state.showIndicator = false;
 
         const handleOrientation = (event) => {
             vnode.state.alpha = event.alpha ? event.alpha.toFixed(2) : null;
@@ -382,15 +380,32 @@ const App = {
 
                 // Update Solar Panel Output
                 if (vnode.state.alpha !== null && vnode.state.beta !== null && vnode.state.gamma !== null) {
+                    // Definitive safety guard against NaN values from sensor errors
+                    const alpha = parseFloat(vnode.state.alpha);
+                    const beta = parseFloat(vnode.state.beta);
+                    const gamma = parseFloat(vnode.state.gamma);
+
+                    if (isNaN(alpha) || isNaN(beta) || isNaN(gamma)) {
+                        // Bad sensor data, clear all AR and debug info and stop processing for this frame
+                        vnode.state.showIndicator = false;
+                        vnode.state.sunIsVisible = false;
+                        vnode.state.debugProjX = null;
+                        vnode.state.debugProjY = null;
+                        vnode.state.debugIndicatorAngle = null;
+                        vnode.state.debugIndicatorX = null;
+                        vnode.state.debugIndicatorY = null;
+                        return; // Exit early
+                    }
+
                     // Apply manual calibration offset for compass heading
-                    const calibratedAlpha = (parseFloat(vnode.state.alpha) - vnode.state.alphaOffset + 360) % 360;
+                    const calibratedAlpha = (alpha - vnode.state.alphaOffset + 360) % 360;
 
                     const panelOutput = calculateSolarPanelOutput(
                         parseFloat(vnode.state.sunAltitude),
                         parseFloat(vnode.state.sunAzimuth),
                         calibratedAlpha, // Use calibrated alpha for the physics model
-                        parseFloat(vnode.state.beta),  // Use raw beta
-                        parseFloat(vnode.state.gamma), // Use raw gamma
+                        beta,  // Use safe beta
+                        gamma, // Use safe gamma
                         vnode.state.isPanelOnBack
                     );
                     if (panelOutput) {
@@ -420,19 +435,45 @@ const App = {
                         parseFloat(vnode.state.gamma),
                         vnode.state.isPanelOnBack
                     );
-                    vnode.state.sunScreenX = sunScreenCoords.x;
-                    vnode.state.sunScreenY = sunScreenCoords.y;
                     vnode.state.sunIsVisible = sunScreenCoords.visible;
+
+                    // Always update the raw projection values for debugging
                     vnode.state.debugProjX = sunScreenCoords.projX ? sunScreenCoords.projX.toFixed(3) : null;
                     vnode.state.debugProjY = sunScreenCoords.projY ? sunScreenCoords.projY.toFixed(3) : null;
+
+                    // Always calculate indicator logic if we have projection data
                     if (sunScreenCoords.projX !== null && sunScreenCoords.projY !== null) {
                         const angle = toDegrees(Math.atan2(sunScreenCoords.projX, sunScreenCoords.projY));
-                        vnode.state.debugIndicatorAngle = angle.toFixed(2);
-
                         const indicatorPos = calculateIndicatorPosition(sunScreenCoords.projX, sunScreenCoords.projY);
+
+                        // Always update debug values
+                        vnode.state.debugIndicatorAngle = angle.toFixed(2);
                         vnode.state.debugIndicatorX = indicatorPos.x.toFixed(2);
                         vnode.state.debugIndicatorY = indicatorPos.y.toFixed(2);
+
+                        // Always update final values as well
+                        vnode.state.indicatorX = indicatorPos.x;
+                        vnode.state.indicatorY = indicatorPos.y;
+                        vnode.state.indicatorRotation = angle;
+
+                        // Determine if the sun is TRULY on screen vs just in the forward hemisphere
+                        const isTrulyOnScreen = sunScreenCoords.visible &&
+                                                sunScreenCoords.x >= 0 && sunScreenCoords.x <= 100 &&
+                                                sunScreenCoords.y >= 0 && sunScreenCoords.y <= 100;
+
+                        // The sun dot is visible only if it's truly on the screen
+                        vnode.state.sunIsVisible = isTrulyOnScreen;
+                        // The indicator is shown if the sun is NOT on screen (but we have data)
+                        vnode.state.showIndicator = !isTrulyOnScreen;
+
+                        // Update the sun dot's position only if it's actually on screen
+                        if (isTrulyOnScreen) {
+                            vnode.state.sunScreenX = sunScreenCoords.x;
+                            vnode.state.sunScreenY = sunScreenCoords.y;
+                        }
                     } else {
+                        // No valid projection data, hide everything and clear debug info
+                        vnode.state.showIndicator = false;
                         vnode.state.debugIndicatorAngle = null;
                         vnode.state.debugIndicatorX = null;
                         vnode.state.debugIndicatorY = null;
@@ -641,6 +682,10 @@ const App = {
                     m("p", "Debug Indicator Angle: " + (vnode.state.debugIndicatorAngle !== null ? vnode.state.debugIndicatorAngle + "°" : "Waiting...")),
                     m("p", "Debug Indicator X: " + (vnode.state.debugIndicatorX !== null ? vnode.state.debugIndicatorX : "Waiting...")),
                     m("p", "Debug Indicator Y: " + (vnode.state.debugIndicatorY !== null ? vnode.state.debugIndicatorY : "Waiting...")),
+                    m("p", "Final Indicator X: " + (vnode.state.indicatorX !== null ? vnode.state.indicatorX.toFixed(2) : "Waiting...")),
+                    m("p", "Final Indicator Y: " + (vnode.state.indicatorY !== null ? vnode.state.indicatorY.toFixed(2) : "Waiting...")),
+                    m("p", "Final Indicator Angle: " + (vnode.state.indicatorRotation !== null ? vnode.state.indicatorRotation.toFixed(2) + "°" : "Waiting...")),
+                    m("p", "Final Show Indicator: " + vnode.state.showIndicator),
                 ]),
 
                 m("hr"), // Separator
