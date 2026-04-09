@@ -267,6 +267,8 @@ const App = {
             vnode.state.alpha = event.alpha ? event.alpha.toFixed(2) : null;
             vnode.state.beta = event.beta ? event.beta.toFixed(2) : null;
             vnode.state.gamma = event.gamma ? event.gamma.toFixed(2) : null;
+            updateCalculations(); // Recalculate everything on orientation change
+            m.redraw(); // Redraw the screen immediately
         };
         vnode.state.handleOrientation = handleOrientation;
 
@@ -527,8 +529,8 @@ const App = {
                     if (vnode.state.sunUpdateInterval) {
                         clearInterval(vnode.state.sunUpdateInterval);
                     }
-                    // Start updating calculations every second
-                    vnode.state.sunUpdateInterval = setInterval(() => { updateCalculations(); m.redraw(); }, 1000);
+                    // Start updating sun position every 5 seconds
+                    vnode.state.sunUpdateInterval = setInterval(updateCalculations, 5000);
                     m.redraw();
                 },
                 function(error) {
@@ -546,11 +548,7 @@ const App = {
         } else if (window.DeviceOrientationEvent) {
             vnode.state.orientationPermissionGranted = true;
             window.addEventListener('deviceorientation', function(event) {
-                vnode.state.alpha = event.alpha ? event.alpha.toFixed(2) : null;
-                vnode.state.beta = event.beta ? event.beta.toFixed(2) : null;
-                vnode.state.gamma = event.gamma ? event.gamma.toFixed(2) : null;
-                updateCalculations(); // Update calculations on orientation change
-                m.redraw();
+
             }, true);
         } else {
             vnode.state.orientationError = "Device Orientation is not supported by this browser.";
@@ -581,8 +579,7 @@ const App = {
                             vnode.state.alpha = event.alpha ? event.alpha.toFixed(2) : null;
                             vnode.state.beta = event.beta ? event.beta.toFixed(2) : null;
                             vnode.state.gamma = event.gamma ? event.gamma.toFixed(2) : null;
-                            updateCalculations(); // Update calculations on orientation change
-                            m.redraw();
+
                         }, true);
                     } else {
                         vnode.state.orientationError = "Permission to access device orientation was denied.";
