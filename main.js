@@ -79,8 +79,12 @@ function projectWorldToScreen(worldVector, alpha_deg, beta_deg, gamma_deg, isPan
     const cameraRight = phoneRight;
 
     // 5. Project the sun vector onto the camera's right and up axes.
-    let projX = worldVector[0] * cameraRight[0] + worldVector[1] * cameraRight[1] + worldVector[2] * cameraRight[2];
+    const projX = worldVector[0] * cameraRight[0] + worldVector[1] * cameraRight[1] + worldVector[2] * cameraRight[2];
     const projY = worldVector[0] * cameraUp[0] + worldVector[1] * cameraUp[1] + worldVector[2] * cameraUp[2];
+
+    if (!isVisible) {
+        return { x: 0, y: 0, visible: false, projX: projX, projY: projY };
+    }
 
     // 6. Convert projected coordinates to screen percentages.
     const fov = 90; // Field of view in degrees
@@ -94,7 +98,42 @@ function projectWorldToScreen(worldVector, alpha_deg, beta_deg, gamma_deg, isPan
     const screenX = (normX + 1) / 2 * 100;
     const screenY = (1 - (normY + 1) / 2) * 100; // Y is inverted on screens
 
-    return { x: screenX, y: screenY, visible: true };
+    return { x: screenX, y: screenY, visible: true, projX: projX, projY: projY };
+}
+
+function calculateIndicatorPosition(projX, projY) {
+    const margin = 2;
+    const halfW = (100 - 2 * margin) / 2;
+    const halfH = (100 - 2 * margin) / 2;
+
+    let edgeX, edgeY;
+
+    if (Math.abs(projX) < 1e-9) {
+        edgeX = 0;
+        edgeY = projY > 0 ? halfH : -halfH;
+    } else {
+        const slope = projY / projX;
+        if (projX > 0) {
+            edgeX = halfW;
+        } else {
+            edgeX = -halfW;
+        }
+        edgeY = slope * edgeX;
+
+        if (Math.abs(edgeY) > halfH) {
+            if (projY > 0) {
+                edgeY = halfH;
+            } else {
+                edgeY = -halfH;
+            }
+            edgeX = edgeY / slope;
+        }
+    }
+
+    const finalX = edgeX + 50;
+    const finalY = -edgeY + 50;
+
+    return { x: finalX, y: finalY };
 }
 
 // Function to calculate solar panel output based on sun position and device orientation
@@ -219,6 +258,11 @@ const App = {
         vnode.state.sunScreenX = 0;
         vnode.state.sunScreenY = 0;
         vnode.state.sunIsVisible = false;
+        vnode.state.debugProjX = null;
+        vnode.state.debugProjY = null;
+        vnode.state.debugIndicatorAngle = null;
+        vnode.state.debugIndicatorX = null;
+        vnode.state.debugIndicatorY = null;
 
         const handleOrientation = (event) => {
             vnode.state.alpha = event.alpha ? event.alpha.toFixed(2) : null;
@@ -379,6 +423,20 @@ const App = {
                     vnode.state.sunScreenX = sunScreenCoords.x;
                     vnode.state.sunScreenY = sunScreenCoords.y;
                     vnode.state.sunIsVisible = sunScreenCoords.visible;
+                    vnode.state.debugProjX = sunScreenCoords.projX ? sunScreenCoords.projX.toFixed(3) : null;
+                    vnode.state.debugProjY = sunScreenCoords.projY ? sunScreenCoords.projY.toFixed(3) : null;
+                    if (sunScreenCoords.projX !== null && sunScreenCoords.projY !== null) {
+                        const angle = toDegrees(Math.atan2(sunScreenCoords.projX, sunScreenCoords.projY));
+                        vnode.state.debugIndicatorAngle = angle.toFixed(2);
+
+                        const indicatorPos = calculateIndicatorPosition(sunScreenCoords.projX, sunScreenCoords.projY);
+                        vnode.state.debugIndicatorX = indicatorPos.x.toFixed(2);
+                        vnode.state.debugIndicatorY = indicatorPos.y.toFixed(2);
+                    } else {
+                        vnode.state.debugIndicatorAngle = null;
+                        vnode.state.debugIndicatorX = null;
+                        vnode.state.debugIndicatorY = null;
+                    }
 
                     // Update sonification pitch
                     if (vnode.state.isSonificationPlaying && vnode.state.oscillator) {
@@ -578,6 +636,11 @@ const App = {
                     m("p", "Panel Azimuth: " + (vnode.state.isPanelAzimuthNotApplicable ? "N/A (Panel is Flat)" : (vnode.state.panelAzimuth !== null ? vnode.state.panelAzimuth + "° (" + getCardinalDirection(vnode.state.panelAzimuth) + ")" : "Waiting..."))),
                     m("p", "Panel Tilt: " + (vnode.state.panelTilt !== null ? vnode.state.panelTilt + "°" : "Waiting...")),
                     m("p", "Panel Normal Vector: " + (vnode.state.panelNormalVector ? `[${vnode.state.panelNormalVector.map(n => n.toFixed(2)).join(', ')}]` : "Waiting...")),
+                    m("p", "Debug ProjX: " + (vnode.state.debugProjX !== null ? vnode.state.debugProjX : "Waiting...")),
+                    m("p", "Debug ProjY: " + (vnode.state.debugProjY !== null ? vnode.state.debugProjY : "Waiting...")),
+                    m("p", "Debug Indicator Angle: " + (vnode.state.debugIndicatorAngle !== null ? vnode.state.debugIndicatorAngle + "°" : "Waiting...")),
+                    m("p", "Debug Indicator X: " + (vnode.state.debugIndicatorX !== null ? vnode.state.debugIndicatorX : "Waiting...")),
+                    m("p", "Debug Indicator Y: " + (vnode.state.debugIndicatorY !== null ? vnode.state.debugIndicatorY : "Waiting...")),
                 ]),
 
                 m("hr"), // Separator
