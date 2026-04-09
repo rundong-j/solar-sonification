@@ -58,36 +58,28 @@ function projectWorldToScreen(worldVector, alpha_deg, beta_deg, gamma_deg, isPan
     }
 
     // 4. Create a view matrix (a coordinate system for the camera) based on device orientation.
-    // This avoids using a fixed "world up" vector, which prevents gimbal lock.
     const screenUp = [
         -sa * cb,
         ca * cb,
         sb
     ];
 
+    // Define a stable "right" vector that always points to the physical right of the phone.
+    const phoneRight = [
+        ca * cg + sa * sb * sg,
+        sa * cg - ca * sb * sg,
+        -cb * sg
+    ];
+
+    // The camera's "up" vector is the screen's physical up direction.
     const cameraUp = screenUp;
 
-    // The camera's "Right" vector is the cross product of its "Up" and "Forward" vectors.
-    let cameraRight = [
-        cameraUp[1] * cameraForward[2] - cameraUp[2] * cameraForward[1],
-        cameraUp[2] * cameraForward[0] - cameraUp[0] * cameraForward[2],
-        cameraUp[0] * cameraForward[1] - cameraUp[1] * cameraForward[0]
-    ];
-    const rightMag = Math.sqrt(cameraRight[0]**2 + cameraRight[1]**2 + cameraRight[2]**2);
-    if (rightMag > 0.001) { // Avoid division by zero
-        cameraRight = cameraRight.map(v => v / rightMag);
-    }
-
-    // Re-orthogonalize cameraUp to ensure a perfect 90-degree angle with cameraRight and cameraForward.
-    // This corrects for any minor inaccuracies from the sensor data.
-    const finalCameraUp = [
-        cameraForward[1] * cameraRight[2] - cameraForward[2] * cameraRight[1],
-        cameraForward[2] * cameraRight[0] - cameraForward[0] * cameraRight[2],
-        cameraForward[0] * cameraRight[1] - cameraForward[1] * cameraRight[0]
-    ];
+    // The camera's "right" vector is the phone's physical right direction.
+    // We apply the "rearview mirror" effect by flipping it when looking from the back.
+    const cameraRight = phoneRight;
 
     // 5. Project the sun vector onto the camera's right and up axes.
-    const projX = worldVector[0] * cameraRight[0] + worldVector[1] * cameraRight[1] + worldVector[2] * cameraRight[2];
+    let projX = worldVector[0] * cameraRight[0] + worldVector[1] * cameraRight[1] + worldVector[2] * cameraRight[2];
     const projY = worldVector[0] * cameraUp[0] + worldVector[1] * cameraUp[1] + worldVector[2] * cameraUp[2];
 
     // 6. Convert projected coordinates to screen percentages.
