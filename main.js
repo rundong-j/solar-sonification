@@ -68,11 +68,13 @@ function calculateSolarPanelOutput(sunAltitude_deg, sunAzimuth_deg_north, alpha_
     const panelTilt_rad = Math.acos(displayNormal[2]);
     const panelTilt_deg = toDegrees(panelTilt_rad);
 
-    let panelAzimuth_deg;
-    const tolerance = 1; // degrees
-    if (panelTilt_deg < tolerance || panelTilt_deg > (180 - tolerance)) {
-        // At or near zenith/nadir, azimuth is unstable. Default to North.
-        panelAzimuth_deg = 0;
+    let panelAzimuth_deg = null;
+    const tolerance = 5; // degrees
+    const isPanelAzimuthNotApplicable = (panelTilt_deg < tolerance || panelTilt_deg > (180 - tolerance));
+
+    if (isPanelAzimuthNotApplicable) {
+        // At or near zenith/nadir, azimuth is unstable and not applicable.
+        panelAzimuth_deg = null;
     } else {
         // Azimuth is the angle in the horizontal plane, calculated from X and Y components.
         const panelAzimuth_rad = Math.atan2(displayNormal[0], displayNormal[1]); // atan2(x, y)
@@ -86,8 +88,9 @@ function calculateSolarPanelOutput(sunAltitude_deg, sunAzimuth_deg_north, alpha_
         output: solarPanelOutput.toFixed(2),
         dotProduct: dotProduct.toFixed(2),
         panelTilt: panelTilt_deg.toFixed(2),
-        panelAzimuth: panelAzimuth_deg.toFixed(2),
-        panelNormal: panelNormalVector
+        panelAzimuth: panelAzimuth_deg ? panelAzimuth_deg.toFixed(2) : null,
+        panelNormal: displayNormal, // Return the correctly flipped normal vector for display
+        isPanelAzimuthNotApplicable: isPanelAzimuthNotApplicable
     };
 }
 
@@ -117,7 +120,7 @@ const App = {
         vnode.state.isSonificationPlaying = false;
         vnode.state.currentGain = 0; // New state to display current gain
         vnode.state.currentPitch = 0; // New state to display current pitch
-        vnode.state.isPanelOnBack = true; // New state for panel direction
+        vnode.state.isPanelOnBack = false; // Default to panel on screen
         vnode.state.testMode = false; // New state for test mode
         vnode.state.dotProduct = null; // New state for dot product
         vnode.state.sunAzimuth12pm = null; // New state for 12 PM sun azimuth
@@ -129,6 +132,7 @@ const App = {
         vnode.state.panelAzimuth = null;
         vnode.state.deviceHeading = null;
         vnode.state.panelNormalVector = null;
+        vnode.state.isPanelAzimuthNotApplicable = false;
         vnode.state.lastEdited = "4/7/2026, 5:33:04 PM"; // Hardcoded timestamp
         vnode.state.alphaOffset = 0; // For manual calibration
 
@@ -267,6 +271,7 @@ const App = {
                         vnode.state.panelAzimuth = panelOutput.panelAzimuth;
                         vnode.state.panelTilt = panelOutput.panelTilt;
                         vnode.state.panelNormalVector = panelOutput.panelNormal;
+                        vnode.state.isPanelAzimuthNotApplicable = panelOutput.isPanelAzimuthNotApplicable;
                     }
 
                     // Calculate Device Heading (Compass)
@@ -438,7 +443,7 @@ const App = {
                 m("h3", "Debug Info"),
                 m("p", "Dot Product (Sun vs Panel): " + (vnode.state.dotProduct !== null ? vnode.state.dotProduct : "Waiting...")),
                 m("p", "Device Heading (Compass): " + (vnode.state.deviceHeading !== null ? vnode.state.deviceHeading + "° (" + getCardinalDirection(vnode.state.deviceHeading) + ")" : "Waiting...")),
-                m("p", "Panel Azimuth: " + (vnode.state.panelAzimuth !== null ? vnode.state.panelAzimuth + "° (" + getCardinalDirection(vnode.state.panelAzimuth) + ")" : "Waiting...")),
+                m("p", "Panel Azimuth: " + (vnode.state.isPanelAzimuthNotApplicable ? "N/A (Panel is Flat)" : (vnode.state.panelAzimuth !== null ? vnode.state.panelAzimuth + "° (" + getCardinalDirection(vnode.state.panelAzimuth) + ")" : "Waiting..."))),
                 m("p", "Panel Tilt: " + (vnode.state.panelTilt !== null ? vnode.state.panelTilt + "°" : "Waiting...")),
                 m("p", "Panel Normal Vector: " + (vnode.state.panelNormalVector ? `[${vnode.state.panelNormalVector.map(n => n.toFixed(2)).join(', ')}]` : "Waiting...")),
             ]),
