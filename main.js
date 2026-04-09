@@ -39,13 +39,13 @@ function projectWorldToScreen(worldVector, alpha_deg, beta_deg, gamma_deg, isPan
 
     // This vector points out of the front of the screen, in world (E, N, U) coordinates.
     const screenNormal = [
-        sa * sb * cg + ca * sg,
-        -ca * sb * cg + sa * sg,
-        cb * cg
+        -(sa * sb * cg + ca * sg),
+        -(-ca * sb * cg + sa * sg),
+        -(cb * cg)
     ];
 
     // 2. The AR camera direction depends on the panel setting.
-    const cameraForward = isPanelOnBack ? screenNormal.map(v => -v) : screenNormal;
+    const cameraForward = isPanelOnBack ? screenNormal : screenNormal.map(v => -v);
 
     // 3. Check if the sun is in the hemisphere the camera is pointing towards.
     // This is done by calculating the dot product between the camera's direction and the sun's direction.
@@ -57,29 +57,35 @@ function projectWorldToScreen(worldVector, alpha_deg, beta_deg, gamma_deg, isPan
         return { x: 0, y: 0, visible: false };
     }
 
-    // 4. Create a view matrix (a coordinate system for the camera).
-    const worldUp = [0, 0, 1]; // Z-axis is "Up" in the world
+    // 4. Create a view matrix (a coordinate system for the camera) based on device orientation.
+    // This avoids using a fixed "world up" vector, which prevents gimbal lock.
+    const screenUp = [
+        -sa * cb,
+        ca * cb,
+        sb
+    ];
 
-    // Use cross products to find the camera's "right" and "up" vectors.
+    const cameraUp = screenUp;
+
+    // The camera's "Right" vector is the cross product of its "Up" and "Forward" vectors.
     let cameraRight = [
-        worldUp[1] * cameraForward[2] - worldUp[2] * cameraForward[1],
-        worldUp[2] * cameraForward[0] - worldUp[0] * cameraForward[2],
-        worldUp[0] * cameraForward[1] - worldUp[1] * cameraForward[0]
+        cameraUp[1] * cameraForward[2] - cameraUp[2] * cameraForward[1],
+        cameraUp[2] * cameraForward[0] - cameraUp[0] * cameraForward[2],
+        cameraUp[0] * cameraForward[1] - cameraUp[1] * cameraForward[0]
     ];
     const rightMag = Math.sqrt(cameraRight[0]**2 + cameraRight[1]**2 + cameraRight[2]**2);
-    // Handle case where camera is pointing straight up/down
-    if (rightMag < 0.001) {
-        cameraRight = [1, 0, 0]; // Default to East if looking at zenith/nadir
-    } else {
+    if (rightMag > 0.001) { // Avoid division by zero
         cameraRight = cameraRight.map(v => v / rightMag);
     }
 
-    let cameraUp = [
+    // Re-orthogonalize cameraUp to ensure a perfect 90-degree angle with cameraRight and cameraForward.
+    // This corrects for any minor inaccuracies from the sensor data.
+    const finalCameraUp = [
         cameraForward[1] * cameraRight[2] - cameraForward[2] * cameraRight[1],
         cameraForward[2] * cameraRight[0] - cameraForward[0] * cameraRight[2],
         cameraForward[0] * cameraRight[1] - cameraForward[1] * cameraRight[0]
     ];
-    
+
     // 5. Project the sun vector onto the camera's right and up axes.
     const projX = worldVector[0] * cameraRight[0] + worldVector[1] * cameraRight[1] + worldVector[2] * cameraRight[2];
     const projY = worldVector[0] * cameraUp[0] + worldVector[1] * cameraUp[1] + worldVector[2] * cameraUp[2];
