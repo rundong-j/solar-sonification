@@ -650,7 +650,7 @@ const App = {
                     top: vnode.state.sunScreenY + "%",
                     width: "20px",
                     height: "20px",
-                    background: "red",
+                    background: "#CC5500",
                     borderRadius: "50%",
                     transform: "translate(-50%, -50%)",
                     display: vnode.state.sunIsVisible ? "block" : "none"
@@ -665,7 +665,7 @@ const App = {
                     height: "0",
                     borderLeft: "10px solid transparent",
                     borderRight: "10px solid transparent",
-                    borderBottom: "20px solid rgba(255, 0, 0, 0.5)",
+                    borderBottom: "20px solid rgba(204, 85, 0, 0.5)", // Semi-transparent burnt orange
                     transform: `translate(-50%, -50%) rotate(${vnode.state.indicatorRotation}deg)`,
                     transformOrigin: "center center",
                     display: vnode.state.showIndicator ? "block" : "none"
@@ -675,7 +675,7 @@ const App = {
 
         // The debug text content, which is conditional
         const debugContent = vnode.state.isDebugMode ? m("div", { style: "font-family: sans-serif; padding: 1em;" }, [
-            m("h1", "Solar Sonification"),
+            m("h1", "Pocket Solar Panel"),
             vnode.state.geolocationError ?
                 m("p", "Geolocation Error: " + vnode.state.geolocationError) :
                 m("div", [
@@ -686,22 +686,21 @@ const App = {
                     m("p", "Sun Azimuth: " + (vnode.state.sunAzimuth !== null ? vnode.state.sunAzimuth + "° " + getCardinalDirection(parseFloat(vnode.state.sunAzimuth)) : "Waiting...")),
                     m("p", "Solar Panel Output: " + (vnode.state.solarPanelOutput !== null ? (vnode.state.solarPanelOutput * 100).toFixed(0) + "%" : "Waiting...")),
                     vnode.state.isSonificationPlaying ? m("p", "Current Pitch: " + vnode.state.currentPitch + " Hz") : null,
-                    !vnode.state.orientationPermissionGranted ?
-                        m("button", { onclick: () => App.requestOrientationPermission(vnode) }, "Allow Device Orientation") :
-                        null,
+                    
                     m("button", {
-                        onclick: vnode.state.toggleSonification
+                        onclick: vnode.state.toggleSonification,
+                        style: "padding: 10px; margin: 5px; font-size: 1em;"
                     }, vnode.state.isSonificationPlaying ? "Stop Sonification" : "Start Sonification"),
-                    m("button", { onclick: vnode.state.togglePanelDirection }, "Panel on " + (vnode.state.isPanelOnBack ? "Back" : "Front") + " of Phone"),
-                    m("button", { onclick: vnode.state.toggleTestMode }, vnode.state.testMode ? "Exit Test Mode" : "Enter Test Mode (Zenith Sun)"),
-                    m("button", { onclick: vnode.state.toggleAirMassModel }, vnode.state.isAirMassModelEnabled ? "Disable Air Mass Model" : "Enable Air Mass Model")
+                    m("button", { onclick: vnode.state.togglePanelDirection, style: "padding: 10px; margin: 5px; font-size: 1em;" }, "Panel on " + (vnode.state.isPanelOnBack ? "Back" : "Front") + " of Phone"),
+                    m("button", { onclick: vnode.state.toggleTestMode, style: "padding: 10px; margin: 5px; font-size: 1em;" }, vnode.state.testMode ? "Exit Test Mode" : "Enter Test Mode (Zenith Sun)"),
+                    m("button", { onclick: vnode.state.toggleAirMassModel, style: "padding: 10px; margin: 5px; font-size: 1em;" }, vnode.state.isAirMassModelEnabled ? "Disable Air Mass Model" : "Enable Air Mass Model")
                 ]),
             m("hr"),
             m("div", [
                 m("div", {
                     style: "margin-top: 10px;"
                 }, [
-                    m("button", { onclick: vnode.state.calibrateOrientation }, "Calibrate Compass (Set Current Heading as North)"),
+                    m("button", { onclick: vnode.state.calibrateOrientation, style: "padding: 10px; margin: 5px; font-size: 1em;" }, "Calibrate Compass (Set Current Heading as North)"),
                     (vnode.state.alphaOffset !== 0) ? 
                         m("p", { style: "font-style: italic; color: #888;" }, "Calibration offset is active.") :
                         m("p", { style: "font-style: italic; color: #888;" }, "Calibration offset is inactive.")
@@ -746,16 +745,20 @@ const App = {
 
         // The meta controls are always visible
         const metaControls = m("div", {
-            style: "position: fixed; bottom: 10px; right: 10px; z-index: 2000;"
+            style: "position: fixed; bottom: 10px; right: 10px; z-index: 2000; display: flex; flex-direction: column; gap: 5px; align-items: flex-end;"
         }, [
-            m("button", { onclick: vnode.state.toggleDebugMode }, vnode.state.isDebugMode ? "Exit Debug Mode" : "Enter Debug Mode")
+            !vnode.state.orientationPermissionGranted ?
+                m("button", { onclick: () => App.requestOrientationPermission(vnode), style: "padding: 10px; margin: 5px; font-size: 1em;" }, "Allow Device Orientation") :
+                null,
+            m("button", { onclick: vnode.state.toggleDebugMode, style: "padding: 10px; margin: 5px; font-size: 1em;" }, vnode.state.isDebugMode ? "Exit Debug Mode" : "Enter Debug Mode")
         ]);
 
         // The main view is a container for all visible elements
         return m("div", {
-            style: vnode.state.isDebugMode ? "" : "background-color: #000; width: 100vw; height: 100vh;"
+            style: "background-color: #F0F0F0; width: 100vw; min-height: 100vh; color: #212121;"
         }, [
             arContainer,
+            !vnode.state.isDebugMode ? m("h1", { style: "position: fixed; top: 10px; left: 20px; font-family: sans-serif; z-index: 1500;" }, "Pocket Solar Panel") : null,
             debugContent,
             metaControls
         ]);
