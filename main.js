@@ -234,6 +234,12 @@ function calculateSolarPanelOutput(sunAltitude_deg, sunAzimuth_deg_north, alpha_
 
 const App = {
     oninit: function(vnode) {
+        // Create and append the link tag for the external CSS file
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'style.css';
+        document.head.appendChild(link);
+
         vnode.state.latitude = null;
         vnode.state.longitude = null;
         vnode.state.currentSolarTime = null; // New state for current solar time
@@ -632,49 +638,26 @@ const App = {
 
     view: function(vnode) {
         // AR Container is always visible
-        const arContainer = m("div", { 
-            style: {
-                position: "fixed",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100%",
-                pointerEvents: "none",
-                zIndex: 1000
-            }
-        }, [
-            m("div", { // AR Sun visualization
+        const arContainer = m(".ar-container", [
+            m(".sun-visualization", { // AR Sun visualization
                 style: {
-                    position: "absolute",
                     left: vnode.state.sunScreenX + "%",
                     top: vnode.state.sunScreenY + "%",
-                    width: "20px",
-                    height: "20px",
-                    background: "#CC5500",
-                    borderRadius: "50%",
-                    transform: "translate(-50%, -50%)",
                     display: vnode.state.sunIsVisible ? "block" : "none"
                 }
             }),
-            m("div", { // Off-screen indicator
+            m(".offscreen-indicator", { // Off-screen indicator
                 style: {
-                    position: "absolute",
                     left: vnode.state.indicatorX + "%",
                     top: vnode.state.indicatorY + "%",
-                    width: "0",
-                    height: "0",
-                    borderLeft: "10px solid transparent",
-                    borderRight: "10px solid transparent",
-                    borderBottom: "20px solid rgba(204, 85, 0, 0.5)", // Semi-transparent burnt orange
                     transform: `translate(-50%, -50%) rotate(${vnode.state.indicatorRotation}deg)`,
-                    transformOrigin: "center center",
                     display: vnode.state.showIndicator ? "block" : "none"
                 }
             })
         ]);
 
         // The debug text content, which is conditional
-        const debugContent = vnode.state.isDebugMode ? m("div", { style: "font-family: sans-serif; padding: 1em;" }, [
+        const debugContent = vnode.state.isDebugMode ? m(".debug-content", [
             m("h1", "Pocket Solar Panel"),
             vnode.state.geolocationError ?
                 m("p", "Geolocation Error: " + vnode.state.geolocationError) :
@@ -687,20 +670,19 @@ const App = {
                     m("p", "Solar Panel Output: " + (vnode.state.solarPanelOutput !== null ? (vnode.state.solarPanelOutput * 100).toFixed(0) + "%" : "Waiting...")),
                     vnode.state.isSonificationPlaying ? m("p", "Current Pitch: " + vnode.state.currentPitch + " Hz") : null,
                     
-                    m("button", {
-                        onclick: vnode.state.toggleSonification,
-                        style: "padding: 10px; margin: 5px; font-size: 1em;"
+                    m("button.button", {
+                        onclick: vnode.state.toggleSonification
                     }, vnode.state.isSonificationPlaying ? "Stop Sonification" : "Start Sonification"),
-                    m("button", { onclick: vnode.state.togglePanelDirection, style: "padding: 10px; margin: 5px; font-size: 1em;" }, "Panel on " + (vnode.state.isPanelOnBack ? "Back" : "Front") + " of Phone"),
-                    m("button", { onclick: vnode.state.toggleTestMode, style: "padding: 10px; margin: 5px; font-size: 1em;" }, vnode.state.testMode ? "Exit Test Mode" : "Enter Test Mode (Zenith Sun)"),
-                    m("button", { onclick: vnode.state.toggleAirMassModel, style: "padding: 10px; margin: 5px; font-size: 1em;" }, vnode.state.isAirMassModelEnabled ? "Disable Air Mass Model" : "Enable Air Mass Model")
+                    m("button.button", { onclick: vnode.state.togglePanelDirection }, "Panel on " + (vnode.state.isPanelOnBack ? "Back" : "Front") + " of Phone"),
+                    m("button.button", { onclick: vnode.state.toggleTestMode }, vnode.state.testMode ? "Exit Test Mode" : "Enter Test Mode (Zenith Sun)"),
+                    m("button.button", { onclick: vnode.state.toggleAirMassModel }, vnode.state.isAirMassModelEnabled ? "Disable Air Mass Model" : "Enable Air Mass Model")
                 ]),
             m("hr"),
             m("div", [
                 m("div", {
                     style: "margin-top: 10px;"
                 }, [
-                    m("button", { onclick: vnode.state.calibrateOrientation, style: "padding: 10px; margin: 5px; font-size: 1em;" }, "Calibrate Compass (Set Current Heading as North)"),
+                    m("button.button", { onclick: vnode.state.calibrateOrientation }, "Calibrate Compass (Set Current Heading as North)"),
                     (vnode.state.alphaOffset !== 0) ? 
                         m("p", { style: "font-style: italic; color: #888;" }, "Calibration offset is active.") :
                         m("p", { style: "font-style: italic; color: #888;" }, "Calibration offset is inactive.")
@@ -738,27 +720,23 @@ const App = {
             m("hr"),
             vnode.state.orientationError ?
                 m("p", "Orientation Error: " + vnode.state.orientationError) :
-            m("footer", {
-                style: "margin-top: 20px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 0.8em; color: #888;"
-            }, "Last Edited: " + vnode.state.lastEdited)
+            m("footer.footer", "Last Edited: " + vnode.state.lastEdited)
         ]) : null;
 
         // The meta controls are always visible
-        const metaControls = m("div", {
-            style: "position: fixed; bottom: 10px; right: 10px; z-index: 2000; display: flex; flex-direction: column; gap: 5px; align-items: flex-end;"
-        }, [
+        const metaControls = m(".meta-controls", [
             !vnode.state.orientationPermissionGranted ?
-                m("button", { onclick: () => App.requestOrientationPermission(vnode), style: "padding: 10px; margin: 5px; font-size: 1em;" }, "Allow Device Orientation") :
+                m("button.button", { onclick: () => App.requestOrientationPermission(vnode) }, "Allow Device Orientation") :
                 null,
-            m("button", { onclick: vnode.state.toggleDebugMode, style: "padding: 10px; margin: 5px; font-size: 1em;" }, vnode.state.isDebugMode ? "Exit Debug Mode" : "Enter Debug Mode")
+            m("button.button", { onclick: vnode.state.toggleDebugMode }, vnode.state.isDebugMode ? "Exit Debug Mode" : "Enter Debug Mode")
         ]);
 
         // The main view is a container for all visible elements
-        return m("div", {
-            style: "background-color: #F0F0F0; width: 100vw; min-height: 100vh; color: #212121;"
+        return m(".app-container", {
+            class: vnode.state.isPanelOnBack ? 'panel-back' : 'panel-front'
         }, [
             arContainer,
-            !vnode.state.isDebugMode ? m("h1", { style: "position: fixed; top: 10px; left: 20px; font-family: sans-serif; z-index: 1500;" }, "Pocket Solar Panel") : null,
+            !vnode.state.isDebugMode ? m("h1.main-title", "Pocket Solar Panel") : null,
             debugContent,
             metaControls
         ]);
