@@ -286,6 +286,7 @@ const App = {
         vnode.state.showIndicator = false;
         vnode.state.isAirMassModelEnabled = false;
         vnode.state.isDebugMode = false;
+        vnode.state.showStep2Instruction = false;
 
         const handleOrientation = (event) => {
             vnode.state.alpha = event.alpha ? event.alpha.toFixed(2) : null;
@@ -665,9 +666,6 @@ const App = {
                     m("p", "Solar Panel Output: " + (vnode.state.solarPanelOutput !== null ? (vnode.state.solarPanelOutput * 100).toFixed(0) + "%" : "Waiting...")),
                     vnode.state.isSonificationPlaying ? m("p", "Current Pitch: " + vnode.state.currentPitch + " Hz") : null,
                     
-                    m("button.button", {
-                        onclick: vnode.state.toggleSonification
-                    }, vnode.state.isSonificationPlaying ? "Stop Sonification" : "Start Sonification"),
                     m("button.button", { onclick: vnode.state.togglePanelDirection }, "Panel on " + (vnode.state.isPanelOnBack ? "Back" : "Front") + " of Phone"),
                     m("button.button", { onclick: vnode.state.toggleTestMode }, vnode.state.testMode ? "Exit Test Mode" : "Enter Test Mode (Zenith Sun)"),
                     m("button.button", { onclick: vnode.state.toggleAirMassModel }, vnode.state.isAirMassModelEnabled ? "Disable Air Mass Model" : "Enable Air Mass Model")
@@ -720,11 +718,23 @@ const App = {
 
         // The meta controls are always visible
         const metaControls = m(".meta-controls", [
-            !vnode.state.orientationPermissionGranted ?
-                m("button.button", { onclick: () => App.requestOrientationPermission(vnode) }, "Allow Device Orientation") :
-                null,
+            m("button.button", {
+                onclick: vnode.state.toggleSonification
+            }, vnode.state.isSonificationPlaying ? "Stop Sonification" : "Start Sonification"),
             m("button.button", { onclick: vnode.state.toggleDebugMode }, vnode.state.isDebugMode ? "Exit Debug Mode" : "Enter Debug Mode")
         ]);
+
+        // The initial setup view, shown only in default mode before orientation is allowed
+        const setupView = !vnode.state.orientationPermissionGranted && !vnode.state.isDebugMode ? 
+            m(".setup-container", [
+                m("p.setup-instruction", "Step 1. Point your phone towards North."),
+                m("button.button", { onclick: () => App.requestOrientationPermission(vnode) }, "Allow Device Orientation")
+            ]) : null;
+
+        const step2InstructionView = vnode.state.showStep2Instruction ?
+            m(".setup-container", [
+                m("p.setup-instruction", "Step 2. Orient phone towards the Sun.")
+            ]) : null;
 
         // The main view is a container for all visible elements
         return m(".app-container", {
@@ -733,7 +743,9 @@ const App = {
             arContainer,
             !vnode.state.isDebugMode ? m("h1.main-title", "Pocket Solar Panel") : null,
             debugContent,
-            metaControls
+            metaControls,
+            setupView,
+            step2InstructionView
         ]);
     },
 
@@ -744,6 +756,11 @@ const App = {
                 if (permissionState === 'granted') {
                     window.addEventListener('deviceorientation', vnode.state.handleOrientation, true);
                     vnode.state.orientationPermissionGranted = true;
+                    vnode.state.showStep2Instruction = true;
+                    setTimeout(() => {
+                        vnode.state.showStep2Instruction = false;
+                        m.redraw();
+                    }, 4000);
                 } else {
                     vnode.state.orientationError = "Permission to access device orientation was denied.";
                 }
