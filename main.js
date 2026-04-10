@@ -130,8 +130,24 @@ function calculateIndicatorPosition(projX, projY) {
     return { x: finalX, y: finalY };
 }
 
+function calculateAirMassIrradiance(sunAltitude_deg) {
+    if (sunAltitude_deg <= 0) {
+        return 0; // No light if the sun is at or below the horizon
+    }
+    const zenith_deg = 90 - sunAltitude_deg;
+    const zenith_rad = toRadians(zenith_deg);
+
+    // A simple but effective model for Air Mass (AM)
+    const airMass = 1 / (Math.cos(zenith_rad) + 0.50572 * Math.pow(96.07995 - zenith_deg, -1.6364));
+
+    // A model for how irradiance decreases with air mass
+    const irradianceFactor = Math.pow(0.7, Math.pow(airMass, 0.678));
+
+    return irradianceFactor;
+}
+
 // Function to calculate solar panel output based on sun position and device orientation
-function calculateSolarPanelOutput(sunAltitude_deg, sunAzimuth_deg_north, alpha_deg, beta_deg, gamma_deg, isPanelOnBack) {
+function calculateSolarPanelOutput(sunAltitude_deg, sunAzimuth_deg_north, alpha_deg, beta_deg, gamma_deg, isPanelOnBack, isAirMassModelEnabled) {
     // Ensure all necessary data is available
     if (sunAltitude_deg === null || sunAzimuth_deg_north === null || alpha_deg === null || beta_deg === null || gamma_deg === null) {
         return null; // Not enough data to calculate
@@ -173,7 +189,12 @@ function calculateSolarPanelOutput(sunAltitude_deg, sunAzimuth_deg_north, alpha_
         dotProduct = -dotProduct;
     }
 
-    const solarPanelOutput = Math.max(0, dotProduct);
+    let solarPanelOutput = Math.max(0, dotProduct);
+
+    if (isAirMassModelEnabled) {
+        const irradianceFactor = calculateAirMassIrradiance(sunAltitude_deg);
+        solarPanelOutput *= irradianceFactor;
+    }
 
     // 4. Calculate the panel's true azimuth and tilt for UI display
     const displayNormal = isPanelOnBack ? panelNormalVector.map(v => -v) : panelNormalVector;
@@ -262,6 +283,7 @@ const App = {
         vnode.state.indicatorY = 50;
         vnode.state.indicatorRotation = 0;
         vnode.state.showIndicator = false;
+        vnode.state.isAirMassModelEnabled = false;
 
         const handleOrientation = (event) => {
             vnode.state.alpha = event.alpha ? event.alpha.toFixed(2) : null;
@@ -329,6 +351,13 @@ const App = {
             m.redraw();
         };
         vnode.state.toggleTestMode = toggleTestMode;
+
+        const toggleAirMassModel = () => {
+            vnode.state.isAirMassModelEnabled = !vnode.state.isAirMassModelEnabled;
+            updateCalculations();
+            m.redraw();
+        };
+        vnode.state.toggleAirMassModel = toggleAirMassModel;
 
         // Function to update sun position and solar panel output
         const updateCalculations = () => {
@@ -409,7 +438,8 @@ const App = {
                         calibratedAlpha, // Use calibrated alpha for the physics model
                         beta,  // Use safe beta
                         gamma, // Use safe gamma
-                        vnode.state.isPanelOnBack
+                        vnode.state.isPanelOnBack,
+                        vnode.state.isAirMassModelEnabled
                     );
                     if (panelOutput) {
                         vnode.state.solarPanelOutput = panelOutput.output;
@@ -657,7 +687,8 @@ const App = {
                             onclick: vnode.state.toggleSonification
                         }, vnode.state.isSonificationPlaying ? "Stop Sonification" : "Start Sonification"),
                         m("button", { onclick: vnode.state.togglePanelDirection }, "Panel on " + (vnode.state.isPanelOnBack ? "Back" : "Front") + " of Phone"),
-                            m("button", { onclick: vnode.state.toggleTestMode }, vnode.state.testMode ? "Exit Test Mode" : "Enter Test Mode (Zenith Sun)")
+                            m("button", { onclick: vnode.state.toggleTestMode }, vnode.state.testMode ? "Exit Test Mode" : "Enter Test Mode (Zenith Sun)"),
+                            m("button", { onclick: vnode.state.toggleAirMassModel }, vnode.state.isAirMassModelEnabled ? "Disable Air Mass Model" : "Enable Air Mass Model")
                     ]),
                 m("hr"), // Separator
 
