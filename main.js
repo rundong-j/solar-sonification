@@ -1,5 +1,6 @@
 import m from "mithril";
 import * as SunCalc from "suncalc";
+import './style.css';
 
 // Helper to convert degrees to radians
 function toRadians(degrees) {
@@ -234,12 +235,6 @@ function calculateSolarPanelOutput(sunAltitude_deg, sunAzimuth_deg_north, alpha_
 
 const App = {
     oninit: function(vnode) {
-        // Create and append the link tag for the external CSS file
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = 'style.css';
-        document.head.appendChild(link);
-
         vnode.state.latitude = null;
         vnode.state.longitude = null;
         vnode.state.currentSolarTime = null; // New state for current solar time
