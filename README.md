@@ -157,14 +157,39 @@ The primary problem-solving effort has been a long and iterative process of debu
 - "I mean will it consume more tokens as context gets longer? Every day I'm spending more money than the last one. Yes try again. Don't apologize excessively. Failure and iteration are expected. Be a principal engineer in your communication."
 - "It works partially. Vertical movement seems fine now. There's no horizontal movement in test mode. In normal mode, the horizontal movement sometimes seems reversed."
 
-## 7. Pending Tasks
-There are no explicit pending tasks. The user's last instruction was to fix the AR movement, which has just been implemented.
+## 7. Current Work: Elliptical Sun Visualization
 
-## 8. Current Work
-Immediately before this summary request, I was addressing a regression where a previous fix for gimbal lock instability broke horizontal movement. The user reported: "It works partially. Vertical movement seems fine now. There's no horizontal movement in test mode. In normal mode, the horizontal movement sometimes seems reversed." My last action was to implement a new, robust camera coordinate system inside the `projectWorldToScreen` function in `/Users/rdj/Documents/solar sim sonification/main.js` to definitively fix this class of bugs. The development server has been restarted with this new code.
+We have implemented a new, more physically accurate sun visualization. Instead of a simple circle, the sun is now rendered as an ellipse that realistically changes shape based on the angle of incidence. This provides a more intuitive visual cue for the sun's position relative to the solar panel.
 
-## 9. Optional Next Step
-Await user verification of the latest fix. The user needs to test the application to confirm if the horizontal movement issues in both normal and test modes have been resolved by the new camera coordinate system architecture.
+### Key Improvements:
+- **Physically-Based Model:** The visualization is the 2D projection of a cylindrical sunbeam onto the 3D plane of the virtual solar panel, resulting in an ellipse.
+- **Dynamic Shape & Scaling:** The ellipse stretches from a circle to an elongated ellipse based on the sun's angle. A scaling exponent (`k=1.5`) has been added to make this effect more visually apparent.
+- **Test-Driven Development:** The core mathematical logic for the ellipse calculation was developed using a strict TDD approach with Vitest.
+
+### Known Issues:
+- **Unstable Visual Rotation:** A significant bug remains where the ellipse's visual rotation on the screen is unstable and incorrectly affected by the phone's roll (the `gamma` orientation value). While the underlying `panel-relative` angle is calculated correctly and is stable, the 3D-to-2D projection logic in `projectWorldToScreen` does not correctly account for the phone's rotation, leading to erratic visual behavior. An attempt to fix this by overhauling the camera logic was unsuccessful and has been reverted.
+
+### Next Steps:
+- The immediate next step is to find a robust solution for the visual rotation bug. This will likely require a deeper dive into the `projectWorldToScreen` function to correctly and stably transform the ellipse's orientation from the 3D world space to the 2D screen space.
+
+### Bug Fix Strategy (As of 2026-04-11)
+Based on analysis of debug snapshots, we have identified four distinct bugs and ranked them by certainty, ease of fix, and risk of regression. The plan is to address them in the following order:
+
+1.  **Fix Phantom `majorAxisVector` (Certainty: 100%, Risk: Very Low):**
+    - **Symptom:** When the sun's projection is a perfect circle (e.g., flat panel under a zenith sun), numerical instability creates a random, non-zero `majorAxisVector` and a meaningless `panelAngle`.
+    - **Fix:** Add a guard clause to `calculateEllipseParameters` to check if the sun is perpendicular to the panel. If so, force the `majorAxisVector` to `[0, 0, 0]`.
+
+2.  **Redefine `panelAngle` (Certainty: 100%, Risk: Low):**
+    - **Symptom:** The `panelAngle` is measured against a fixed world-North reference, making it unintuitive when the panel is tilted.
+    - **Fix:** Modify `calculatePanelAngle` to use a reference vector relative to the panel's own geometry (e.g., its tilt direction) instead of world North.
+
+3.  **Fix Flawed `Panel Tilt` Calculation (Certainty: 100%, Risk: Medium):**
+    - **Symptom:** The `Panel Tilt` value is incorrectly influenced by the phone's roll (`gamma`) due to a flaw in the `panelNormalVector` calculation.
+    - **Fix:** Correct the Euler angle math in `calculateSolarPanelOutput` to properly isolate the phone's pitch (`beta`) for the tilt calculation. This fix is riskier as it touches the core physics simulation.
+
+4.  **Fix Unstable `screenAngle` (Certainty: 100%, Risk: High):**
+    - **Symptom:** The main visual bug where the ellipse's rotation on screen is unstable and incorrectly tied to the phone's roll.
+    - **Fix:** Re-architect the camera logic in `projectWorldToScreen` to create a roll-independent coordinate system for projecting the ellipse's orientation. This is the most complex and highest-risk fix.
 
 ## 10. Conversation Language
 Primary language: English.

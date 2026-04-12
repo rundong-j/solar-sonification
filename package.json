@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest",
     "dev": "vite --host",
     "build": "vite build"
   },
@@ -12,7 +12,9 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "vite": "^8.0.3"
+    "jsdom": "^29.0.2",
+    "vite": "^8.0.3",
+    "vitest": "^4.1.4"
   },
   "dependencies": {
     "mithril": "^2.3.8",

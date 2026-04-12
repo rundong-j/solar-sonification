@@ -2,6 +2,96 @@ import m from "mithril";
 import * as SunCalc from "suncalc";
 import './style.css';
 
+export function calculateEllipseParameters(sunDirection, panelNormal, sunRadius, scalingExponent) {
+    const norm = (v) => {
+        const mag = Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+        if (mag === 0) return [0, 0, 0];
+        return v.map(c => c / mag);
+    };
+    const sunDir = norm(sunDirection);
+    const panelN = norm(panelNormal);
+
+    const cosAngle = sunDir[0] * panelN[0] + sunDir[1] * panelN[1] + sunDir[2] * panelN[2];
+
+    const ry = sunRadius;
+    const minCosAngle = 0.001;
+    const effectiveCosAngle = Math.max(Math.abs(cosAngle), minCosAngle);
+    const rx = sunRadius / (effectiveCosAngle ** scalingExponent);
+
+    let majorAxisVector;
+    let isDefaulted = false;
+    // If the sun is almost perfectly perpendicular to the panel, the projection is a circle.
+    // In this case, the major axis is undefined, so we force it to a zero vector
+    // to prevent numerical instability from creating a random, meaningless angle.
+    if (Math.abs(cosAngle) > 0.999) {
+        majorAxisVector = [0, 0, 0];
+        isDefaulted = true;
+    } else {
+        const sunOnPanelPlane = [
+            sunDir[0] - cosAngle * panelN[0],
+            sunDir[1] - cosAngle * panelN[1],
+            sunDir[2] - cosAngle * panelN[2]
+        ];
+        majorAxisVector = norm(sunOnPanelPlane);
+    }
+
+    return { rx, ry, majorAxisVector, isDefaulted };
+}
+
+export function calculateScreenAngle(majorAxisVector, cameraRight, cameraUp) {
+    if (!majorAxisVector || !cameraRight || !cameraUp) return { angle: 0, isDefaulted: true };
+
+    // If majorAxisVector is a zero vector, angle is undefined.
+    if (majorAxisVector[0] === 0 && majorAxisVector[1] === 0 && majorAxisVector[2] === 0) {
+        return { angle: 0, isDefaulted: true };
+    }
+
+    const projX = majorAxisVector[0] * cameraRight[0] + majorAxisVector[1] * cameraRight[1] + majorAxisVector[2] * cameraRight[2];
+    const projY = majorAxisVector[0] * cameraUp[0] + majorAxisVector[1] * cameraUp[1] + majorAxisVector[2] * cameraUp[2];
+
+    const angle = Math.atan2(projY, projX) * 180 / Math.PI;
+    return { angle, isDefaulted: false };
+}
+
+export function calculatePanelAngle(majorAxisVector, panelNormal) {
+    if (!majorAxisVector || !panelNormal) return { angle: 0, isDefaulted: true };
+
+    // If the major axis vector is a zero vector, the angle is undefined.
+    if (majorAxisVector[0] === 0 && majorAxisVector[1] === 0 && majorAxisVector[2] === 0) {
+        return { angle: 0, isDefaulted: true };
+    }
+
+    const norm = (v) => {
+        const mag = Math.sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+        if (mag < 0.001) return [0, 0, 0];
+        return v.map(c => c / mag);
+    };
+
+    const dot = (v1, v2) => v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2];
+
+    // Use world North as a stable reference to create the panel's local coordinate system
+    const worldReference = [0, 1, 0]; // North
+
+    const panelX_unnormalized = [
+        worldReference[0] - dot(worldReference, panelNormal) * panelNormal[0],
+        worldReference[1] - dot(worldReference, panelNormal) * panelNormal[1],
+        worldReference[2] - dot(worldReference, panelNormal) * panelNormal[2],
+    ];
+    const panelX = norm(panelX_unnormalized);
+
+    const panelY = [
+        panelX[1] * panelNormal[2] - panelX[2] * panelNormal[1],
+        panelX[2] * panelNormal[0] - panelX[0] * panelNormal[2],
+        panelX[0] * panelNormal[1] - panelX[1] * panelNormal[0],
+    ];
+
+    const projX = dot(majorAxisVector, panelX);
+    const projY = dot(majorAxisVector, panelY);
+
+    const angle = Math.atan2(projY, projX) * 180 / Math.PI;
+    return { angle, isDefaulted: false };
+}
+
 // Helper to convert degrees to radians
 function toRadians(degrees) {
     return degrees * Math.PI / 180;
@@ -22,7 +112,7 @@ function projectWorldToScreen(worldVector, alpha_deg, beta_deg, gamma_deg, isPan
     // This replaces the previous buggy version.
 
     if (worldVector === null || alpha_deg === null || beta_deg === null || gamma_deg === null || isNaN(alpha_deg) || isNaN(beta_deg) || isNaN(gamma_deg)) {
-        return { x: 0, y: 0, visible: false, projX: null, projY: null };
+        return { x: 0, y: 0, visible: false, projX: null, projY: null, cameraUp: null, cameraRight: null };
     }
 
     // 1. Calculate the screen's normal vector (points out of the screen) in world coordinates.
@@ -79,7 +169,7 @@ function projectWorldToScreen(worldVector, alpha_deg, beta_deg, gamma_deg, isPan
     // If the sun is not visible, we don't need to do the final screen projection.
     // But we still return the raw projection data for the indicator.
     if (!isVisible) {
-        return { x: 0, y: 0, visible: false, projX: projX, projY: projY };
+        return { x: 0, y: 0, visible: false, projX: projX, projY: projY, cameraUp: cameraUp, cameraRight: cameraRight };
     }
 
     // 6. Convert projected coordinates to screen percentages.
@@ -94,7 +184,7 @@ function projectWorldToScreen(worldVector, alpha_deg, beta_deg, gamma_deg, isPan
     const screenX = (normX + 1) / 2 * 100;
     const screenY = (1 - (normY + 1) / 2) * 100; // Y is inverted on screens
 
-    return { x: screenX, y: screenY, visible: true, projX: projX, projY: projY };
+    return { x: screenX, y: screenY, visible: true, projX: projX, projY: projY, cameraUp: cameraUp, cameraRight: cameraRight };
 }
 
 function calculateIndicatorPosition(projX, projY) {
@@ -235,6 +325,7 @@ function calculateSolarPanelOutput(sunAltitude_deg, sunAzimuth_deg_north, alpha_
 
 const App = {
     oninit: function(vnode) {
+        const SCALING_EXPONENT = 1.5;
         vnode.state.latitude = null;
         vnode.state.longitude = null;
         vnode.state.currentSolarTime = null; // New state for current solar time
@@ -287,6 +378,18 @@ const App = {
         vnode.state.isAirMassModelEnabled = false;
         vnode.state.isDebugMode = false;
         vnode.state.showStep2Instruction = false;
+
+        vnode.state.ellipseNominalRadius = 20;
+        vnode.state.sunEllipseSvgAngle = 0; // For the visual rotation
+        vnode.state.sunEllipsePanelAngle = 0; // For the debug display
+
+        vnode.state.isMajorAxisVectorDefaulted = false;
+        vnode.state.isPanelAngleDefaulted = false;
+        vnode.state.isScreenAngleDefaulted = false;
+
+        vnode.state.debugMajorAxisVector = null;
+        vnode.state.debugCameraRight = null;
+        vnode.state.debugCameraUp = null;
 
         const handleOrientation = (event) => {
             vnode.state.alpha = event.alpha ? event.alpha.toFixed(2) : null;
@@ -477,6 +580,40 @@ const App = {
                         parseFloat(vnode.state.gamma),
                         vnode.state.isPanelOnBack
                     );
+
+                    vnode.state.debugCameraRight = sunScreenCoords.cameraRight;
+                    vnode.state.debugCameraUp = sunScreenCoords.cameraUp;
+
+                    if (sunVector && vnode.state.panelNormalVector) {
+                        const sunRadius = vnode.state.ellipseNominalRadius; // Base radius for visualization
+                        const ellipseParams = calculateEllipseParameters(
+                            sunVector,
+                            vnode.state.panelNormalVector,
+                            sunRadius, // This is already using ellipseNominalRadius
+                            SCALING_EXPONENT
+                        );
+                        vnode.state.sunEllipseRx = ellipseParams.rx;
+                        vnode.state.sunEllipseRy = ellipseParams.ry;
+                        vnode.state.debugMajorAxisVector = ellipseParams.majorAxisVector;
+                        vnode.state.isMajorAxisVectorDefaulted = ellipseParams.isDefaulted;
+
+                        if (sunScreenCoords.cameraRight && sunScreenCoords.cameraUp) {
+                            const screenAngleResult = calculateScreenAngle(
+                                ellipseParams.majorAxisVector,
+                                sunScreenCoords.cameraRight,
+                                sunScreenCoords.cameraUp
+                            );
+                            vnode.state.sunEllipseSvgAngle = screenAngleResult.angle;
+                            vnode.state.isScreenAngleDefaulted = screenAngleResult.isDefaulted;
+
+                            const panelAngleResult = calculatePanelAngle(
+                                ellipseParams.majorAxisVector,
+                                vnode.state.panelNormalVector
+                            );
+                            vnode.state.sunEllipsePanelAngle = panelAngleResult.angle;
+                            vnode.state.isPanelAngleDefaulted = panelAngleResult.isDefaulted;
+                        }
+                    }
                     vnode.state.sunIsVisible = sunScreenCoords.visible;
 
                     // Always calculate indicator logic if we have projection data
@@ -635,13 +772,49 @@ const App = {
     view: function(vnode) {
         // AR Container is always visible
         const arContainer = m(".ar-container", [
-            m(".sun-visualization", { // AR Sun visualization
+            m(".sun-visualization", {
                 style: {
                     left: vnode.state.sunScreenX + "%",
                     top: vnode.state.sunScreenY + "%",
-                    display: vnode.state.sunIsVisible ? "block" : "none"
+                    display: vnode.state.sunIsVisible ? "block" : "none",
+                    transform: "translate(-50%, -50%)"
                 }
-            }),
+            }, m("svg", {
+                    width: vnode.state.sunEllipseRx * 2,
+                    height: vnode.state.sunEllipseRy * 2,
+                    style: {
+                        transform: `rotate(${vnode.state.sunEllipseSvgAngle}deg)`,
+                        overflow: "visible"
+                    }
+                },
+                m("ellipse", {
+                    cx: vnode.state.sunEllipseRx,
+                    cy: vnode.state.sunEllipseRy,
+                    rx: vnode.state.sunEllipseRx,
+                    ry: vnode.state.sunEllipseRy,
+                    fill: "#FFD700" // Gold color for the sun
+                }),
+                // Line for the Major Axis of the ellipse
+                m("line", {
+                    x1: 0,
+                    y1: vnode.state.sunEllipseRy,
+                    x2: vnode.state.sunEllipseRx * 2,
+                    y2: vnode.state.sunEllipseRy,
+                    stroke: "black",
+                    "stroke-width": 2
+                }),
+                // Line for the Panel's Reference Axis (rotated by the panel angle)
+                m("line", {
+                    x1: 0,
+                    y1: vnode.state.sunEllipseRy,
+                    x2: vnode.state.sunEllipseRx * 2,
+                    y2: vnode.state.sunEllipseRy,
+                    stroke: "blue",
+                    "stroke-width": 2,
+                    "stroke-dasharray": "5, 5",
+                    transform: `rotate(${-vnode.state.sunEllipsePanelAngle} ${vnode.state.sunEllipseRx} ${vnode.state.sunEllipseRy})`
+                })
+            )),
             m(".offscreen-indicator", { // Off-screen indicator
                 style: {
                     left: vnode.state.indicatorX + "%",
@@ -686,14 +859,32 @@ const App = {
                 m("p", "Gamma (Y-axis): " + (vnode.state.gamma || "Waiting...")),
                 m("h3", "Calibration Info"),
                 m("p", "Alpha Offset: " + vnode.state.alphaOffset),
-                m("h3", "Debug Info"),
-                m("p", "Dot Product (Sun vs Panel): " + (vnode.state.dotProduct !== null ? vnode.state.dotProduct : "Waiting...")),
+                m("h3", "Panel & World Info"),
                 m("p", "Device Heading (Compass): " + (vnode.state.deviceHeading !== null ? vnode.state.deviceHeading + "° (" + getCardinalDirection(vnode.state.deviceHeading) + ")" : "Waiting...")),
-                m("p", "Panel Azimuth: " + (vnode.state.isPanelAzimuthNotApplicable ? "N/A (Panel is Flat)" : (vnode.state.panelAzimuth !== null ? vnode.state.panelAzimuth + "° (" + getCardinalDirection(vnode.state.panelAzimuth) + ")" : "Waiting..."))),
                 m("p", "Panel Tilt: " + (vnode.state.panelTilt !== null ? vnode.state.panelTilt + "°" : "Waiting...")),
+                m("p", "Panel Azimuth: " + (vnode.state.isPanelAzimuthNotApplicable ? "N/A (Panel is Flat)" : (vnode.state.panelAzimuth !== null ? vnode.state.panelAzimuth + "° (" + getCardinalDirection(vnode.state.panelAzimuth) + ")" : "Waiting..."))),
                 m("p", "Panel Normal Vector: " + (vnode.state.panelNormalVector ? `[${vnode.state.panelNormalVector.map(n => n.toFixed(2)).join(', ')}]` : "Waiting...")),
-                m("p", "ProjX: " + (vnode.state.debugProjX !== null ? vnode.state.debugProjX : "Waiting...")),
-                m("p", "ProjY: " + (vnode.state.debugProjY !== null ? vnode.state.debugProjY : "Waiting...")),
+                m("p", "Dot Product (Sun vs Panel): " + (vnode.state.dotProduct !== null ? vnode.state.dotProduct : "Waiting...")),
+
+                m("h3", "AR Camera & Projection"),
+                m("p", "Camera Right Vector: " + (vnode.state.debugCameraRight ? `[${vnode.state.debugCameraRight.map(n => n.toFixed(2)).join(', ')}]` : "Waiting...")),
+                m("p", "Camera Up Vector: " + (vnode.state.debugCameraUp ? `[${vnode.state.debugCameraUp.map(n => n.toFixed(2)).join(', ')}]` : "Waiting...")),
+                m("p", "ProjX (Sun on Camera Right): " + (vnode.state.debugProjX !== null ? vnode.state.debugProjX : "Waiting...")),
+                m("p", "ProjY (Sun on Camera Up): " + (vnode.state.debugProjY !== null ? vnode.state.debugProjY : "Waiting...")),
+
+                m("h3", "Ellipse Calculation"),
+                m("p", ["Major Axis Vector: " + (vnode.state.debugMajorAxisVector ? `[${vnode.state.debugMajorAxisVector.map(n => n.toFixed(2)).join(', ')}]` : "Waiting..."),
+                    vnode.state.isMajorAxisVectorDefaulted ? m("span.debug-flag", " (defaulted: circle)") : null
+                ]),
+                m("p", "Ellipse Rx: " + (vnode.state.sunEllipseRx ? vnode.state.sunEllipseRx.toFixed(2) : "Waiting...")),
+                m("p", "Ellipse Ry: " + (vnode.state.sunEllipseRy ? vnode.state.sunEllipseRy.toFixed(2) : "Waiting...")),
+                m("p", ["Ellipse Angle (Panel): " + (vnode.state.sunEllipsePanelAngle ? vnode.state.sunEllipsePanelAngle.toFixed(2) + "°" : "Waiting..."),
+                    vnode.state.isPanelAngleDefaulted ? m("span.debug-flag", " (defaulted: circle)") : null
+                ]),
+                m("p", ["Ellipse Angle (Screen): " + (vnode.state.sunEllipseSvgAngle ? vnode.state.sunEllipseSvgAngle.toFixed(2) + "°" : "Waiting..."),
+                    vnode.state.isScreenAngleDefaulted ? m("span.debug-flag", " (defaulted: circle)") : null
+                ]),
+                m("h3", "Off-screen Indicator"),
                 m("p", "Indicator Angle: " + (vnode.state.debugIndicatorAngle !== null ? vnode.state.debugIndicatorAngle + "°" : "Waiting...")),
                 m("p", "Indicator X: " + (vnode.state.debugIndicatorX !== null ? vnode.state.debugIndicatorX : "Waiting...")),
                 m("p", "Indicator Y: " + (vnode.state.debugIndicatorY !== null ? vnode.state.debugIndicatorY : "Waiting...")),
